@@ -7,11 +7,19 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Logo } from "@/components/shared/Logo";
 import { Button } from "@/components/ui/button";
-import { ImageGenerator } from "./ImageGenerator";
+import { GalleryBuilder } from "./GalleryBuilder";
 import { MessageEditor } from "./MessageEditor";
 import { VoiceRecorder } from "./VoiceRecorder";
-import { MusicGenerator } from "./MusicGenerator";
+import { SoundtrackBuilder } from "./SoundtrackBuilder";
 import { PACKAGES, PackageKey, OCCASIONS } from "@/lib/constants";
+import {
+  getCardImages,
+  getCardTracks,
+  CardImage,
+  CardTrack,
+  MAX_GALLERY_IMAGES,
+  MAX_SOUNDTRACK_TRACKS,
+} from "@/lib/media";
 import {
   Image,
   MessageSquare,
@@ -43,23 +51,31 @@ export function StudioLayout({ slug }: StudioLayoutProps) {
   const card = useQuery(api.cards.getBySlug, { slug });
   const updateContent = useMutation(api.cards.updateContent);
   const incrementImageRegen = useMutation(api.cards.incrementImageRegen);
+  const updateGallery = useMutation(api.cards.updateGallery);
+  const updateSoundtrack = useMutation(api.cards.updateSoundtrack);
   const markReady = useMutation(api.cards.markReady);
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
   const getFileUrlMutation = useMutation(api.files.getFileUrlMutation);
 
   const [currentStep, setCurrentStep] = useState<StepKey>("image");
   const [localImageUrl, setLocalImageUrl] = useState<string | null>(null);
-  const [localMusicUrl, setLocalMusicUrl] = useState<string | null>(null);
   const [isFinishing, setIsFinishing] = useState(false);
 
   useEffect(() => {
     if (card) {
       setLocalImageUrl(card.imageUrl || null);
-      setLocalMusicUrl(card.musicUrl || null);
     }
   }, [card]);
 
+  const initialImages: CardImage[] = card ? getCardImages(card) : [];
+  const initialTracks: CardTrack[] = card ? getCardTracks(card) : [];
+  const unlimited =
+    card?.paidVia === "owner" || card?.paidVia === "admin";
+
   const pkg = card ? PACKAGES[card.packageType as PackageKey] : null;
+  // Media limits from the package; owner/admin cards get the absolute maximum.
+  const maxImages = unlimited ? MAX_GALLERY_IMAGES : pkg?.maxImages ?? 1;
+  const maxTracks = unlimited ? MAX_SOUNDTRACK_TRACKS : pkg?.maxTracks ?? 0;
   const occasionData = card ? OCCASIONS.find((o) => o.slug === card.occasion) : null;
   const displayOccasionName =
     card?.occasion === "custom" && card?.customOccasionName
@@ -88,37 +104,23 @@ export function StudioLayout({ slug }: StudioLayoutProps) {
     setCurrentStep(steps[currentStepIndex - 1].key);
   };
 
-  const handleImageGenerated = useCallback(
-    async (
-      url: string,
-      prompt: string,
-      meta?: {
-        originalPhotoUrl?: string;
-        imageStyle?: string;
-        skipRegen?: boolean;
-      }
-    ) => {
-      setLocalImageUrl(url);
+  // Persist the full gallery; mirror the cover into local preview state.
+  const handleImagesChange = useCallback(
+    async (images: CardImage[]) => {
+      setLocalImageUrl(images[0]?.url || null);
       try {
-        // Only increment regen count for AI-generated images, not direct photo use
-        if (!meta?.skipRegen) {
-          await incrementImageRegen({ slug });
-        }
-        await updateContent({
-          slug,
-          imageUrl: url,
-          imagePrompt: prompt,
-          ...(meta?.originalPhotoUrl
-            ? { originalPhotoUrl: meta.originalPhotoUrl }
-            : {}),
-          ...(meta?.imageStyle ? { imageStyle: meta.imageStyle } : {}),
-        });
+        await updateGallery({ slug, images });
       } catch (e) {
-        console.error("Failed to save image:", e);
+        console.error("Failed to save gallery:", e);
       }
     },
-    [slug, incrementImageRegen, updateContent]
+    [slug, updateGallery]
   );
+
+  // Count an AI generation against the cap (throws when capped).
+  const handleCountRegen = useCallback(async () => {
+    await incrementImageRegen({ slug });
+  }, [slug, incrementImageRegen]);
 
   const handlePhotoUploaded = useCallback(
     async (file: File): Promise<string> => {
@@ -146,6 +148,7 @@ export function StudioLayout({ slug }: StudioLayoutProps) {
       recipientName?: string;
       senderName?: string;
       messageText?: string;
+      messageStyle?: string;
     }) => {
       try {
         await updateContent({ slug, ...data });
@@ -175,16 +178,15 @@ export function StudioLayout({ slug }: StudioLayoutProps) {
     [slug, generateUploadUrl, updateContent]
   );
 
-  const handleMusicGenerated = useCallback(
-    async (url: string, prompt: string) => {
-      setLocalMusicUrl(url);
+  const handleTracksChange = useCallback(
+    async (tracks: CardTrack[]) => {
       try {
-        await updateContent({ slug, musicUrl: url, musicPrompt: prompt });
+        await updateSoundtrack({ slug, tracks });
       } catch (e) {
-        console.error("Failed to save music:", e);
+        console.error("Failed to save soundtrack:", e);
       }
     },
-    [slug, updateContent]
+    [slug, updateSoundtrack]
   );
 
   const handleFinish = async () => {
@@ -284,18 +286,25 @@ export function StudioLayout({ slug }: StudioLayoutProps) {
             {currentStep === "image" && (
               <div>
                 <h2 className="text-xl font-heading font-bold mb-1">
-                  Create Your {displayOccasionName} Card Image
+                  {maxImages > 1
+                    ? `Build Your ${displayOccasionName} Memory Lane`
+                    : `Choose Your ${displayOccasionName} Photo`}
                 </h2>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Upload your own photo or pick from our designs
+                  {maxImages > 1
+                    ? "Add photos as a timeline of moments — upload your own or pick a design. The first photo is the cover."
+                    : "Upload your own photo or pick a design for your card."}
                 </p>
-                <ImageGenerator
+                <GalleryBuilder
                   occasion={card.occasion}
-                  imageUrl={localImageUrl}
-                  imageRegenCount={card.imageRegenCount}
-                  onImageGenerated={handleImageGenerated}
-                  onPhotoUploaded={handlePhotoUploaded}
                   slug={slug}
+                  imageRegenCount={card.imageRegenCount}
+                  unlimited={unlimited}
+                  maxImages={maxImages}
+                  initialImages={initialImages}
+                  onPhotoUploaded={handlePhotoUploaded}
+                  onPersist={handleImagesChange}
+                  onCountRegen={handleCountRegen}
                 />
               </div>
             )}
@@ -310,6 +319,7 @@ export function StudioLayout({ slug }: StudioLayoutProps) {
                   recipientName={card.recipientName}
                   senderName={card.senderName}
                   messageText={card.messageText}
+                  messageStyle={card.messageStyle}
                   onUpdate={handleMessageUpdate}
                 />
               </div>
@@ -330,15 +340,20 @@ export function StudioLayout({ slug }: StudioLayoutProps) {
 
             {currentStep === "music" && (
               <div>
-                <h2 className="text-xl font-heading font-bold mb-1">Generate Music</h2>
+                <h2 className="text-xl font-heading font-bold mb-1">
+                  {maxTracks > 1 ? "Create Your Soundtrack" : "Create Your Music"}
+                </h2>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Create custom AI-generated music that plays in the background
+                  {maxTracks > 1
+                    ? "Generate up to three tracks that play in sequence in the background"
+                    : "Generate a track that plays in the background when the card opens"}
                 </p>
-                <MusicGenerator
+                <SoundtrackBuilder
                   occasion={card.occasion}
-                  musicUrl={localMusicUrl}
-                  onMusicGenerated={handleMusicGenerated}
                   slug={slug}
+                  maxTracks={maxTracks}
+                  initialTracks={initialTracks}
+                  onPersist={handleTracksChange}
                 />
               </div>
             )}
@@ -363,7 +378,17 @@ export function StudioLayout({ slug }: StudioLayoutProps) {
                     <p className="text-lg font-heading italic text-foreground/80 mb-2">
                       Dear {card.recipientName || "___"},
                     </p>
-                    <p className="text-muted-foreground whitespace-pre-wrap">
+                    <p
+                      className="text-muted-foreground whitespace-pre-wrap"
+                      style={
+                        card.messageStyle === "handwritten"
+                          ? {
+                              fontFamily: "var(--font-script), 'Caveat', cursive",
+                              fontSize: "1.35rem",
+                            }
+                          : undefined
+                      }
+                    >
                       {card.messageText || "Your message will appear here..."}
                     </p>
                     <p className="mt-4 text-sm font-heading italic text-muted-foreground">

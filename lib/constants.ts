@@ -1325,7 +1325,7 @@ export const OCCASION_EXAMPLES: Record<OccasionKey, ExampleCard[]> = {
   ],
 };
 
-export type PackageKey = "basic" | "voice" | "music" | "full";
+export type PackageKey = "basic" | "voice" | "music" | "full" | "story";
 
 export interface PackageInfo {
   name: string;
@@ -1338,6 +1338,11 @@ export interface PackageInfo {
     voice: boolean;
     music: boolean;
   };
+  // Media entitlements. Memory Lane (multiple photos + multi-track soundtrack)
+  // is reserved for the top "story" tier; everything below is a single photo /
+  // single track. Owner/admin cards bypass these (see StudioLayout).
+  maxImages: number;
+  maxTracks: number;
 }
 
 export const PACKAGES: Record<PackageKey, PackageInfo> = {
@@ -1353,6 +1358,8 @@ export const PACKAGES: Record<PackageKey, PackageInfo> = {
       "Shareable link",
     ],
     includes: { image: true, voice: false, music: false },
+    maxImages: 1,
+    maxTracks: 0,
   },
   voice: {
     name: "Card + Voice",
@@ -1365,6 +1372,8 @@ export const PACKAGES: Record<PackageKey, PackageInfo> = {
       "Auto-plays on card open",
     ],
     includes: { image: true, voice: true, music: false },
+    maxImages: 1,
+    maxTracks: 0,
   },
   music: {
     name: "Card + Music",
@@ -1377,12 +1386,14 @@ export const PACKAGES: Record<PackageKey, PackageInfo> = {
       "Background music on card open",
     ],
     includes: { image: true, voice: false, music: true },
+    maxImages: 1,
+    maxTracks: 1,
   },
   full: {
     name: "Full Experience",
     price: 499,
     priceDisplay: "$4.99",
-    description: "The ultimate personalized card with everything",
+    description: "The ultimate single-photo card with voice and music",
     features: [
       "AI-generated card image",
       "Custom text message",
@@ -1391,6 +1402,25 @@ export const PACKAGES: Record<PackageKey, PackageInfo> = {
       "Best value",
     ],
     includes: { image: true, voice: true, music: true },
+    maxImages: 1,
+    maxTracks: 1,
+  },
+  story: {
+    name: "Story",
+    price: 799,
+    priceDisplay: "$7.99",
+    description:
+      "A scroll-through Memory Lane of photos with voice and a full soundtrack",
+    features: [
+      "Everything in Full",
+      "Up to 10 photos as a scrolling story",
+      "Captions & date labels per photo",
+      "Up to 3 AI music tracks (play in sequence)",
+      "Our most magical experience",
+    ],
+    includes: { image: true, voice: true, music: true },
+    maxImages: 10,
+    maxTracks: 3,
   },
 } as const;
 

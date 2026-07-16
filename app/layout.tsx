@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Playfair_Display, Geist_Mono } from "next/font/google";
+import { Inter, Playfair_Display, Geist_Mono, Caveat } from "next/font/google";
 import "./globals.css";
 import { ConvexClientProvider } from "./ConvexClientProvider";
 import { Toaster } from "sonner";
@@ -16,6 +16,12 @@ const playfair = Playfair_Display({
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
+// Script font for the "handwritten" message reveal.
+const caveat = Caveat({
+  variable: "--font-script",
   subsets: ["latin"],
 });
 
@@ -59,7 +65,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${inter.variable} ${playfair.variable} ${geistMono.variable} antialiased`}
+        className={`${inter.variable} ${playfair.variable} ${geistMono.variable} ${caveat.variable} antialiased`}
       >
         <ConvexClientProvider>{children}</ConvexClientProvider>
         <Toaster richColors position="top-center" />

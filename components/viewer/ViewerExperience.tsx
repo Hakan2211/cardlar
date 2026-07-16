@@ -1,12 +1,17 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Envelope } from "./Envelope";
 import { ParticleEffects } from "./ParticleEffects";
 import { MessageDisplay } from "./MessageDisplay";
+import { ScrollStory } from "./ScrollStory";
+import { EndScreen } from "./EndScreen";
 import { Watermark } from "./Watermark";
 import { OCCASIONS } from "@/lib/constants";
+import { CardImage } from "@/lib/media";
+import { useSoundtrack } from "@/hooks/useSoundtrack";
+import { usePhotoPalette } from "@/hooks/usePhotoPalette";
 
 interface CardData {
   slug: string;
@@ -15,12 +20,13 @@ interface CardData {
   recipientName: string;
   senderName: string;
   messageText: string;
-  imageUrl?: string | null;
+  images: CardImage[];
   voiceUrl?: string | null;
-  musicUrl?: string | null;
+  musicUrls: string[];
   showWatermark: boolean;
   particleEffect?: string | null;
   fontFamily?: string | null;
+  messageStyle?: string | null;
 }
 
 interface ViewerExperienceProps {
@@ -32,16 +38,31 @@ type ViewState = "envelope" | "opening" | "revealed";
 
 export function ViewerExperience({ card, onOpen }: ViewerExperienceProps) {
   const [viewState, setViewState] = useState<ViewState>("envelope");
+  const [messageComplete, setMessageComplete] = useState(false);
   const voiceRef = useRef<HTMLAudioElement | null>(null);
-  const musicRef = useRef<HTMLAudioElement | null>(null);
+  const soundtrack = useSoundtrack(card.musicUrls);
+
+  // Pause any audio if the viewer unmounts (client-side navigation).
+  useEffect(() => {
+    const voiceEl = voiceRef.current;
+    const musicEl = soundtrack.audioRef.current;
+    return () => {
+      voiceEl?.pause();
+      musicEl?.pause();
+    };
+  }, [soundtrack.audioRef]);
+
+  const hasImages = card.images.length > 0;
 
   const occasionData = OCCASIONS.find((o) => o.slug === card.occasion);
-  const colorScheme = occasionData?.colorScheme || {
+  const occasionScheme = occasionData?.colorScheme || {
     primary: "#C9A96E",
     secondary: "#F5F0E8",
     accent: "#C9A96E",
     background: "#FDFBF7",
   };
+  // Tint the whole experience to the cover photo when we can sample it.
+  const colorScheme = usePhotoPalette(card.images[0]?.url, occasionScheme);
   const particleType =
     card.particleEffect || occasionData?.defaultParticles || "confetti";
 
@@ -49,44 +70,49 @@ export function ViewerExperience({ card, onOpen }: ViewerExperienceProps) {
     setViewState("opening");
     onOpen?.();
 
-    // Start audio after user interaction
+    // Voice plays immediately on the user gesture; music follows shortly after.
     if (card.voiceUrl && voiceRef.current) {
-      voiceRef.current.play().catch(console.error);
+      voiceRef.current.play().catch(() => {});
+    }
+    if (card.musicUrls.length > 0) {
+      setTimeout(() => soundtrack.start(), 1000);
     }
 
-    // Delay music slightly behind voice
-    if (card.musicUrl && musicRef.current) {
-      setTimeout(() => {
-        if (musicRef.current) {
-          musicRef.current.volume = 0.3;
-          musicRef.current.play().catch(console.error);
-        }
-      }, 1000);
-    }
-
-    // Transition to revealed after opening animation
-    setTimeout(() => {
-      setViewState("revealed");
-    }, 800);
+    setTimeout(() => setViewState("revealed"), 800);
   };
 
-  // Cleanup audio on unmount
-  useEffect(() => {
-    return () => {
-      voiceRef.current?.pause();
-      musicRef.current?.pause();
-    };
-  }, []);
+  // Back to the sealed envelope; opening again restarts audio and animations.
+  const handleReplay = () => {
+    setMessageComplete(false);
+    if (voiceRef.current) {
+      voiceRef.current.pause();
+      voiceRef.current.currentTime = 0;
+    }
+    soundtrack.audioRef.current?.pause();
+    soundtrack.setDucked(false);
+    setViewState("envelope");
+  };
 
   return (
     <div
       className="min-h-screen relative"
-      style={{ background: colorScheme.background }}
+      style={{
+        background: colorScheme.background,
+        transition: "background 1.2s ease",
+      }}
     >
-      {/* Audio elements (hidden) */}
-      {card.voiceUrl && <audio ref={voiceRef} src={card.voiceUrl} />}
-      {card.musicUrl && (
-        <audio ref={musicRef} src={card.musicUrl} loop />
+      {/* Hidden audio: voice ducks the soundtrack while it plays. */}
+      {card.voiceUrl && (
+        <audio
+          ref={voiceRef}
+          src={card.voiceUrl}
+          onPlay={() => soundtrack.setDucked(true)}
+          onEnded={() => soundtrack.setDucked(false)}
+          onPause={() => soundtrack.setDucked(false)}
+        />
+      )}
+      {card.musicUrls.length > 0 && (
+        <audio ref={soundtrack.audioRef} onEnded={soundtrack.handleEnded} />
       )}
 
       <AnimatePresence mode="wait">
@@ -99,7 +125,31 @@ export function ViewerExperience({ card, onOpen }: ViewerExperienceProps) {
           />
         )}
 
-        {(viewState === "opening" || viewState === "revealed") && (
+        {(viewState === "opening" || viewState === "revealed") && hasImages && (
+          <motion.div
+            key="story"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.6 }}
+            className="min-h-screen py-8"
+          >
+            <ParticleEffects type={particleType} colorScheme={colorScheme} />
+
+            <ScrollStory
+              images={card.images}
+              messageText={card.messageText}
+              recipientName={card.recipientName}
+              senderName={card.senderName}
+              colorScheme={colorScheme}
+              onReplay={handleReplay}
+              onComplete={() => setMessageComplete(true)}
+            />
+
+            <Watermark show={card.showWatermark} />
+          </motion.div>
+        )}
+
+        {(viewState === "opening" || viewState === "revealed") && !hasImages && (
           <motion.div
             key="card"
             initial={{ opacity: 0, y: 100, scale: 0.8 }}
@@ -107,28 +157,9 @@ export function ViewerExperience({ card, onOpen }: ViewerExperienceProps) {
             transition={{ duration: 0.8, type: "spring", bounce: 0.3 }}
             className="min-h-screen flex flex-col"
           >
-            {/* Particles */}
             <ParticleEffects type={particleType} colorScheme={colorScheme} />
 
-            {/* Card Content */}
             <div className="flex-1 max-w-lg mx-auto w-full px-4 py-8">
-              {/* Card Image */}
-              {card.imageUrl && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: 0.3, duration: 0.5 }}
-                  className="rounded-2xl overflow-hidden shadow-2xl mb-6"
-                >
-                  <img
-                    src={card.imageUrl}
-                    alt="Greeting card"
-                    className="w-full aspect-[4/3] object-cover"
-                  />
-                </motion.div>
-              )}
-
-              {/* Message */}
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -140,10 +171,19 @@ export function ViewerExperience({ card, onOpen }: ViewerExperienceProps) {
                   senderName={card.senderName}
                   messageText={card.messageText}
                   fontFamily={card.fontFamily || undefined}
+                  messageStyle={card.messageStyle || undefined}
+                  onComplete={() => setMessageComplete(true)}
                 />
               </motion.div>
 
-              {/* Watermark */}
+              {messageComplete && (
+                <EndScreen
+                  senderName={card.senderName}
+                  accentColor={colorScheme.accent}
+                  onReplay={handleReplay}
+                />
+              )}
+
               <Watermark show={card.showWatermark} />
             </div>
           </motion.div>

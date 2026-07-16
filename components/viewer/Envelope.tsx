@@ -40,7 +40,7 @@ export function Envelope({ recipientName, onOpen, colorScheme }: EnvelopeProps) 
           <div
             className="absolute top-0 left-0 right-0 h-1/2"
             style={{
-              background: `linear-gradient(135deg, ${colorScheme.primary}22 25%, transparent 25%), 
+              backgroundImage: `linear-gradient(135deg, ${colorScheme.primary}22 25%, transparent 25%),
                            linear-gradient(225deg, ${colorScheme.primary}22 25%, transparent 25%)`,
               backgroundSize: "50% 100%",
               backgroundPosition: "left top, right top",

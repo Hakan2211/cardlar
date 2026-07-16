@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PACKAGES, PackageKey } from "@/lib/constants";
 import { createSlug } from "@/lib/slug";
+import { ownerModeEnabled } from "@/lib/owner";
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,11 +20,22 @@ export async function POST(req: NextRequest) {
       ? `&customOccasionName=${encodeURIComponent(customOccasionName)}`
       : "";
 
-    // If Stripe is not configured, go directly to studio (dev mode)
+    // Stripe not configured. Only skip payment when Owner Mode is explicitly on
+    // (dev-only). Otherwise fail loudly so a misconfigured production deploy can
+    // never hand out free cards through the normal checkout flow.
     if (!process.env.STRIPE_SECRET_KEY) {
-      return NextResponse.json({
-        url: `${baseUrl}/checkout/success?slug=${slug}&occasion=${occasion}&package=${packageType}&watermark=${showWatermark}&dev=true${customParam}`,
-      });
+      if (ownerModeEnabled()) {
+        return NextResponse.json({
+          url: `${baseUrl}/checkout/success?slug=${slug}&occasion=${occasion}&package=${packageType}&watermark=${showWatermark}&dev=true${customParam}`,
+        });
+      }
+      return NextResponse.json(
+        {
+          error:
+            "Payments are not configured. In development, enable OWNER_MODE or use /admin to create free cards.",
+        },
+        { status: 500 }
+      );
     }
 
     // Dynamic import to avoid errors when stripe key not set

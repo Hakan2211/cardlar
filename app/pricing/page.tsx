@@ -1,4 +1,4 @@
-import { Check, Sparkles, Image, Mic, Music, ArrowLeft } from "lucide-react";
+import { Check, Sparkles, Image, Mic, Music, Images, ArrowLeft } from "lucide-react";
 import { PACKAGES, PackageKey } from "@/lib/constants";
 import { Logo } from "@/components/shared/Logo";
 import { FAQ } from "@/components/pricing/FAQ";
@@ -10,13 +10,20 @@ export const metadata = {
     "Simple, transparent pricing for personalized digital greeting cards. Starting at just $1.99. No subscriptions, no hidden fees.",
 };
 
-const packageOrder: PackageKey[] = ["basic", "voice", "music", "full"];
+const packageOrder: PackageKey[] = ["basic", "voice", "music", "full", "story"];
 
 const packageIcons: Record<PackageKey, React.ReactNode> = {
   basic: <Image className="w-5 h-5" />,
   voice: <Mic className="w-5 h-5" />,
   music: <Music className="w-5 h-5" />,
   full: <Sparkles className="w-5 h-5" />,
+  story: <Images className="w-5 h-5" />,
+};
+
+// Emphasized tiers and their badge labels.
+const packageBadge: Partial<Record<PackageKey, string>> = {
+  full: "Best Value",
+  story: "Most Magical",
 };
 
 const allPlansFeatures = [
@@ -53,7 +60,7 @@ export default function PricingPage() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 py-16">
+      <main className="max-w-6xl mx-auto px-4 py-16">
         {/* Hero */}
         <div className="text-center mb-16">
           <h1 className="text-3xl md:text-5xl font-heading font-bold text-foreground mb-4">
@@ -67,26 +74,27 @@ export default function PricingPage() {
         </div>
 
         {/* Package Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-16">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5 mb-16">
           {packageOrder.map((key) => {
             const pkg = PACKAGES[key];
-            const isFull = key === "full";
+            const badge = packageBadge[key];
+            const featured = !!badge;
 
             return (
               <div
                 key={key}
                 className={`relative flex flex-col rounded-2xl border p-6 transition-all ${
-                  isFull
+                  featured
                     ? "border-accent shadow-md ring-1 ring-accent/20 bg-card"
                     : "border-border bg-card hover:border-accent/30 hover:shadow-sm"
                 }`}
               >
-                {/* Best Value badge */}
-                {isFull && (
+                {/* Featured badge */}
+                {badge && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-accent text-white text-xs font-semibold shadow-sm">
+                    <span className="inline-flex items-center gap-1 whitespace-nowrap px-3 py-1 rounded-full bg-accent text-white text-xs font-semibold shadow-sm">
                       <Sparkles className="w-3 h-3" />
-                      Best Value
+                      {badge}
                     </span>
                   </div>
                 )}
@@ -95,7 +103,7 @@ export default function PricingPage() {
                 <div className="flex items-center gap-2.5 mb-3 mt-1">
                   <div
                     className={`w-9 h-9 rounded-lg flex items-center justify-center ${
-                      isFull
+                      featured
                         ? "bg-accent/15 text-accent"
                         : "bg-muted text-muted-foreground"
                     }`}
@@ -139,7 +147,7 @@ export default function PricingPage() {
                 <Link
                   href="/#occasions"
                   className={`inline-flex items-center justify-center h-10 px-4 text-sm font-medium rounded-lg transition-all ${
-                    isFull
+                    featured
                       ? "bg-accent text-white hover:bg-accent/90"
                       : "border border-border text-foreground hover:bg-muted hover:border-accent/40"
                   }`}

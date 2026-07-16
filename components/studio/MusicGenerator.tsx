@@ -10,6 +10,9 @@ interface MusicGeneratorProps {
   musicUrl: string | null;
   onMusicGenerated: (url: string, prompt: string) => void;
   slug: string;
+  // Soundtrack mode: label the button "Add track" and skip the built-in preview
+  // (the SoundtrackBuilder renders its own track list).
+  appendMode?: boolean;
 }
 
 export function MusicGenerator({
@@ -17,6 +20,7 @@ export function MusicGenerator({
   musicUrl,
   onMusicGenerated,
   slug,
+  appendMode = false,
 }: MusicGeneratorProps) {
   const occasionData = OCCASIONS.find((o) => o.slug === occasion);
   const [prompt, setPrompt] = useState(occasionData?.defaultMusicPrompt || "");
@@ -108,15 +112,19 @@ export function MusicGenerator({
         ) : (
           <>
             <Music className="w-4 h-4 mr-2" />
-            {musicUrl ? "Regenerate Music" : "Generate Music"}
+            {appendMode
+              ? "Add track"
+              : musicUrl
+              ? "Regenerate Music"
+              : "Generate Music"}
           </>
         )}
       </Button>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
-      {/* Music Preview */}
-      {musicUrl && (
+      {/* Music Preview (single mode only) */}
+      {musicUrl && !appendMode && (
         <div className="flex items-center gap-3 p-4 rounded-lg border border-border bg-muted/50">
           <button
             onClick={togglePlayback}

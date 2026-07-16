@@ -41,6 +41,11 @@ interface ImageGeneratorProps {
   ) => void;
   onPhotoUploaded: (file: File) => Promise<string>;
   slug: string;
+  // Gallery mode: reset the picker after each successful add so the same
+  // component can produce many images in a row.
+  appendMode?: boolean;
+  // Owner cards regenerate without limit.
+  unlimited?: boolean;
 }
 
 export function ImageGenerator({
@@ -50,6 +55,8 @@ export function ImageGenerator({
   onImageGenerated,
   onPhotoUploaded,
   slug,
+  appendMode = false,
+  unlimited = false,
 }: ImageGeneratorProps) {
   const occasionData = OCCASIONS.find((o) => o.slug === occasion);
   const ORIGINAL_STYLE: StylePreset = {
@@ -81,7 +88,18 @@ export function ImageGenerator({
   const [customPrompt, setCustomPrompt] = useState("");
 
   const remainingGenerations = MAX_IMAGE_REGENERATIONS - imageRegenCount;
-  const isDisabled = isGenerating || remainingGenerations <= 0;
+  const isDisabled = isGenerating || (!unlimited && remainingGenerations <= 0);
+
+  // In append (gallery) mode, clear the picker so the next moment starts fresh.
+  const afterGenerate = () => {
+    if (!appendMode) return;
+    setUploadedPhotoUrl(null);
+    setUploadedPhotoPreview(null);
+    setSelectedStyle(null);
+    setSelectedExample(null);
+    setCustomPrompt("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   // ─── File Upload Handler ────────────────────────────────────────────
   const handleFileSelect = useCallback(
@@ -161,6 +179,7 @@ export function ImageGenerator({
         imageStyle: "original",
         skipRegen: true,
       });
+      afterGenerate();
       return;
     }
 
@@ -187,6 +206,7 @@ export function ImageGenerator({
           originalPhotoUrl: uploadedPhotoUrl,
           imageStyle: selectedStyle.id,
         });
+        afterGenerate();
       }
     } catch {
       setError("Failed to apply style. Please try again.");
@@ -216,6 +236,7 @@ export function ImageGenerator({
         onImageGenerated(data.imageUrl, example.prompt, {
           imageStyle: example.id,
         });
+        afterGenerate();
       }
     } catch {
       setError("Failed to generate image. Please try again.");
@@ -244,6 +265,7 @@ export function ImageGenerator({
         setError(data.error);
       } else {
         onImageGenerated(data.imageUrl, customPrompt);
+        afterGenerate();
       }
     } catch {
       setError("Failed to generate image. Please try again.");
@@ -553,10 +575,13 @@ export function ImageGenerator({
       {/* Remaining Generations */}
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>
-          {remainingGenerations} generation{remainingGenerations !== 1 ? "s" : ""}{" "}
-          remaining
+          {unlimited
+            ? "Unlimited generations (owner)"
+            : `${remainingGenerations} AI generation${
+                remainingGenerations !== 1 ? "s" : ""
+              } remaining${appendMode ? " · uploads are free" : ""}`}
         </span>
-        {imageUrl && (
+        {imageUrl && !appendMode && (
           <span className="flex items-center gap-1 text-accent">
             <RefreshCw className="w-3 h-3" />
             Image ready
@@ -567,9 +592,9 @@ export function ImageGenerator({
       {/* Error Display */}
       {error && <p className="text-sm text-destructive">{error}</p>}
 
-      {/* Generated Image Preview */}
+      {/* Generated Image Preview (single-image mode only; gallery shows its own list) */}
       <AnimatePresence mode="wait">
-        {imageUrl && (
+        {imageUrl && !appendMode && (
           <motion.div
             key={imageUrl}
             initial={{ opacity: 0, scale: 0.95 }}

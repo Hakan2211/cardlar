@@ -6,6 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { ViewerExperience } from "@/components/viewer/ViewerExperience";
 import { Loader2 } from "lucide-react";
 import { Logo } from "@/components/shared/Logo";
+import { getCardImages, getCardTracks } from "@/lib/media";
 
 export default function CardViewPage({
   params,
@@ -58,12 +59,13 @@ export default function CardViewPage({
         recipientName: card.recipientName,
         senderName: card.senderName,
         messageText: card.messageText,
-        imageUrl: card.imageUrl,
+        images: getCardImages(card),
         voiceUrl: voiceFileUrl || null,
-        musicUrl: card.musicUrl,
+        musicUrls: getCardTracks(card).map((t) => t.url),
         showWatermark: card.showWatermark,
         particleEffect: card.particleEffect,
         fontFamily: card.fontFamily,
+        messageStyle: card.messageStyle,
       }}
       onOpen={handleOpen}
     />
