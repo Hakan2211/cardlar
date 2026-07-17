@@ -122,9 +122,12 @@ export function StudioLayout({ slug }: StudioLayoutProps) {
     await incrementImageRegen({ slug });
   }, [slug, incrementImageRegen]);
 
-  const handlePhotoUploaded = useCallback(
+  // Put a user-picked file into Convex storage and hand back a public HTTPS
+  // URL. Shared by the photo and soundtrack uploaders — the gallery needs a
+  // public URL because fal.ai must be able to fetch it, and the soundtrack
+  // needs one because the viewer assigns it straight to <audio>.src.
+  const handleFileUploaded = useCallback(
     async (file: File): Promise<string> => {
-      // Upload the file to Convex storage (same pattern as voice recording)
       const uploadUrl = await generateUploadUrl();
       const result = await fetch(uploadUrl, {
         method: "POST",
@@ -133,10 +136,9 @@ export function StudioLayout({ slug }: StudioLayoutProps) {
       });
       const { storageId } = await result.json();
 
-      // Get the public URL for the uploaded file
       const publicUrl = await getFileUrlMutation({ storageId });
       if (!publicUrl) {
-        throw new Error("Failed to get public URL for uploaded photo");
+        throw new Error("Failed to get public URL for uploaded file");
       }
       return publicUrl;
     },
@@ -302,7 +304,7 @@ export function StudioLayout({ slug }: StudioLayoutProps) {
                   unlimited={unlimited}
                   maxImages={maxImages}
                   initialImages={initialImages}
-                  onPhotoUploaded={handlePhotoUploaded}
+                  onPhotoUploaded={handleFileUploaded}
                   onPersist={handleImagesChange}
                   onCountRegen={handleCountRegen}
                 />
@@ -345,8 +347,8 @@ export function StudioLayout({ slug }: StudioLayoutProps) {
                 </h2>
                 <p className="text-sm text-muted-foreground mb-4">
                   {maxTracks > 1
-                    ? "Generate up to three tracks that play in sequence in the background"
-                    : "Generate a track that plays in the background when the card opens"}
+                    ? "Generate or upload up to three tracks that play in sequence in the background"
+                    : "Generate or upload a track that plays in the background when the card opens"}
                 </p>
                 <SoundtrackBuilder
                   occasion={card.occasion}
@@ -354,6 +356,7 @@ export function StudioLayout({ slug }: StudioLayoutProps) {
                   maxTracks={maxTracks}
                   initialTracks={initialTracks}
                   onPersist={handleTracksChange}
+                  onAudioUploaded={handleFileUploaded}
                 />
               </div>
             )}

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { MusicGenerator } from "./MusicGenerator";
+import { AudioUploader } from "./AudioUploader";
 import { CardTrack } from "@/lib/media";
 import { Play, Pause, Trash2, Music, Plus } from "lucide-react";
 
@@ -12,6 +13,8 @@ interface SoundtrackBuilderProps {
   maxTracks: number;
   initialTracks: CardTrack[];
   onPersist: (tracks: CardTrack[]) => Promise<void> | void;
+  // Stores an uploaded file and resolves its public URL (StudioLayout).
+  onAudioUploaded: (file: File) => Promise<string>;
 }
 
 function TrackRow({
@@ -48,9 +51,13 @@ function TrackRow({
         {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
       </button>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium">Track {index + 1}</p>
-        {track.prompt && (
-          <p className="text-xs text-muted-foreground truncate">{track.prompt}</p>
+        <p className="text-sm font-medium truncate">
+          {track.title || `Track ${index + 1}`}
+        </p>
+        {(track.prompt || track.title) && (
+          <p className="text-xs text-muted-foreground truncate">
+            {track.prompt || "Uploaded"}
+          </p>
         )}
       </div>
       <button
@@ -71,9 +78,11 @@ export function SoundtrackBuilder({
   maxTracks,
   initialTracks,
   onPersist,
+  onAudioUploaded,
 }: SoundtrackBuilderProps) {
   const [tracks, setTracks] = useState<CardTrack[]>(initialTracks);
   const [showAdd, setShowAdd] = useState(initialTracks.length === 0);
+  const [mode, setMode] = useState<"generate" | "upload">("generate");
   const multi = maxTracks > 1;
 
   useEffect(() => {
@@ -94,14 +103,24 @@ export function SoundtrackBuilder({
 
   const atMax = tracks.length >= maxTracks;
 
-  const handleGenerated = useCallback(
-    (url: string, prompt: string) => {
+  const addTrack = useCallback(
+    (track: CardTrack) => {
       if (tracks.length >= maxTracks) return;
-      const next = [...tracks, { url, prompt }];
+      const next = [...tracks, track];
       persist(next);
       if (next.length >= maxTracks) setShowAdd(false);
     },
     [tracks, maxTracks, persist]
+  );
+
+  const handleGenerated = useCallback(
+    (url: string, prompt: string) => addTrack({ url, prompt }),
+    [addTrack]
+  );
+
+  const handleUploaded = useCallback(
+    (url: string, title: string) => addTrack({ url, title }),
+    [addTrack]
   );
 
   const removeAt = (index: number) => {
@@ -112,8 +131,8 @@ export function SoundtrackBuilder({
     <div className="space-y-5">
       <p className="text-xs text-muted-foreground">
         {multi
-          ? `Add up to ${maxTracks} tracks. They play one after another when the card is opened.`
-          : "Generate a track to play in the background when the card is opened."}
+          ? `Add up to ${maxTracks} tracks — generate them with AI or upload your own. They play one after another when the card is opened.`
+          : "Generate a track with AI or upload your own to play in the background when the card is opened."}
       </p>
 
       {tracks.length > 0 && (
@@ -122,8 +141,10 @@ export function SoundtrackBuilder({
             {multi ? `Soundtrack · ${tracks.length}/${maxTracks}` : "Your track"}
           </p>
           {tracks.map((track, index) => (
+            // Keyed by position, not url: the same file uploaded twice yields
+            // the same storage URL and would collide.
             <TrackRow
-              key={track.url}
+              key={`${index}-${track.url}`}
               track={track}
               index={index}
               onRemove={() => removeAt(index)}
@@ -169,13 +190,33 @@ export function SoundtrackBuilder({
               </button>
             )}
           </div>
-          <MusicGenerator
-            occasion={occasion}
-            musicUrl={null}
-            onMusicGenerated={handleGenerated}
-            slug={slug}
-            appendMode
-          />
+          <div className="flex gap-1 p-1 mb-4 rounded-lg bg-muted">
+            {(["generate", "upload"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  mode === m
+                    ? "bg-background shadow-sm text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {m === "generate" ? "Generate with AI" : "Upload your own"}
+              </button>
+            ))}
+          </div>
+
+          {mode === "generate" ? (
+            <MusicGenerator
+              occasion={occasion}
+              musicUrl={null}
+              onMusicGenerated={handleGenerated}
+              slug={slug}
+              appendMode
+            />
+          ) : (
+            <AudioUploader onAudioUploaded={onAudioUploaded} onAdd={handleUploaded} />
+          )}
         </div>
       )}
     </div>
