@@ -70,11 +70,20 @@ export function ViewerExperience({ card, onOpen }: ViewerExperienceProps) {
     setViewState("opening");
     onOpen?.();
 
-    // Voice plays immediately on the user gesture; music follows shortly after.
+    const hasMusic = card.musicUrls.length > 0;
+
     if (card.voiceUrl && voiceRef.current) {
-      voiceRef.current.play().catch(() => {});
-    }
-    if (card.musicUrls.length > 0) {
+      // The voice message leads; the soundtrack waits for it to finish (see
+      // the audio element's onEnded). Prime the music element here, while the
+      // open tap is still in scope — iOS Safari would block a play() issued
+      // seconds later with no gesture behind it.
+      if (hasMusic) soundtrack.prime();
+      voiceRef.current.play().catch(() => {
+        // Voice refused to start; fall back to music so the card isn't silent.
+        if (hasMusic) soundtrack.start();
+      });
+    } else if (hasMusic) {
+      // No voice to wait for — music opens the card.
       setTimeout(() => soundtrack.start(), 1000);
     }
 
@@ -89,7 +98,6 @@ export function ViewerExperience({ card, onOpen }: ViewerExperienceProps) {
       voiceRef.current.currentTime = 0;
     }
     soundtrack.audioRef.current?.pause();
-    soundtrack.setDucked(false);
     setViewState("envelope");
   };
 
@@ -101,14 +109,15 @@ export function ViewerExperience({ card, onOpen }: ViewerExperienceProps) {
         transition: "background 1.2s ease",
       }}
     >
-      {/* Hidden audio: voice ducks the soundtrack while it plays. */}
+      {/* Hidden audio: the voice message plays first and the soundtrack picks
+          up where it ends, so the two never talk over each other. onError
+          covers a voice file that fails to load — the music still plays. */}
       {card.voiceUrl && (
         <audio
           ref={voiceRef}
           src={card.voiceUrl}
-          onPlay={() => soundtrack.setDucked(true)}
-          onEnded={() => soundtrack.setDucked(false)}
-          onPause={() => soundtrack.setDucked(false)}
+          onEnded={() => soundtrack.start()}
+          onError={() => soundtrack.start()}
         />
       )}
       {card.musicUrls.length > 0 && (

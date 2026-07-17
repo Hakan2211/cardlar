@@ -49,5 +49,9 @@ export function getCardTracks(card: TrackSource): CardTrack[] {
   return [];
 }
 
-export const MAX_GALLERY_IMAGES = 10;
+// Ceiling for owner/admin cards only — paying customers are capped by their
+// package's own maxImages/maxTracks (Story tops out at 10 photos). See
+// StudioLayout's `unlimited` branch. Raised past the Story cap so an owner
+// card can hold a longer Memory Lane than we sell.
+export const MAX_GALLERY_IMAGES = 20;
 export const MAX_SOUNDTRACK_TRACKS = 3;
