@@ -40,7 +40,7 @@ export default defineSchema({
     musicStorageId: v.optional(v.id("_storage")),
     musicPrompt: v.optional(v.string()),
 
-    // Soundtrack — up to 3 tracks played in sequence. Optional for back-compat.
+    // Soundtrack — up to 4 tracks played in sequence. Optional for back-compat.
     musicTracks: v.optional(
       v.array(
         v.object({

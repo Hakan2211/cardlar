@@ -40,10 +40,11 @@ export function getCoverImage(card: ImageSource): string | null {
   return getCardImages(card)[0]?.url ?? null;
 }
 
-// Returns the ordered soundtrack (max 3). Falls back to the single musicUrl.
+// Returns the ordered soundtrack (max MAX_SOUNDTRACK_TRACKS). Falls back to
+// the single musicUrl.
 export function getCardTracks(card: TrackSource): CardTrack[] {
   if (card.musicTracks && card.musicTracks.length > 0) {
-    return card.musicTracks.filter((t) => !!t.url).slice(0, 3);
+    return card.musicTracks.filter((t) => !!t.url).slice(0, MAX_SOUNDTRACK_TRACKS);
   }
   if (card.musicUrl) return [{ url: card.musicUrl }];
   return [];
@@ -54,4 +55,4 @@ export function getCardTracks(card: TrackSource): CardTrack[] {
 // StudioLayout's `unlimited` branch. Raised past the Story cap so an owner
 // card can hold a longer Memory Lane than we sell.
 export const MAX_GALLERY_IMAGES = 50;
-export const MAX_SOUNDTRACK_TRACKS = 3;
+export const MAX_SOUNDTRACK_TRACKS = 4;
