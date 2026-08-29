@@ -200,7 +200,7 @@ export const updateGallery = mutation({
   },
 });
 
-// Update the soundtrack (ordered list of up to 4 tracks). Track 0 mirrors into
+// Update the soundtrack (ordered list of up to 5 tracks). Track 0 mirrors into
 // musicUrl for back-compat. Keep the cap in step with MAX_SOUNDTRACK_TRACKS in
 // lib/media.ts — convex can't import from lib, so it is spelled out here.
 export const updateSoundtrack = mutation({
@@ -224,7 +224,7 @@ export const updateSoundtrack = mutation({
     if (!card) throw new Error("Card not found");
     if (!card.isPaid) throw new Error("Card is not paid");
 
-    const tracks = args.tracks.slice(0, 4);
+    const tracks = args.tracks.slice(0, 5);
     await ctx.db.patch(card._id, {
       musicTracks: tracks,
       musicUrl: tracks[0]?.url ?? card.musicUrl,

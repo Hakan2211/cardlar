@@ -55,4 +55,4 @@ export function getCardTracks(card: TrackSource): CardTrack[] {
 // StudioLayout's `unlimited` branch. Raised past the Story cap so an owner
 // card can hold a longer Memory Lane than we sell.
 export const MAX_GALLERY_IMAGES = 50;
-export const MAX_SOUNDTRACK_TRACKS = 4;
+export const MAX_SOUNDTRACK_TRACKS = 5;
