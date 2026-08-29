@@ -26,6 +26,11 @@ import { motion, AnimatePresence } from "framer-motion";
 
 type TabKey = "upload" | "examples";
 
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+// A 50-photo batch would crawl one-at-a-time; a few in flight keeps it quick
+// without hammering Convex storage.
+const BULK_UPLOAD_CONCURRENCY = 4;
+
 interface ImageGeneratorProps {
   occasion: string;
   imageUrl: string | null;
@@ -46,6 +51,12 @@ interface ImageGeneratorProps {
   appendMode?: boolean;
   // Owner cards regenerate without limit.
   unlimited?: boolean;
+  // Gallery mode only: receives a batch of uploaded photo URLs, in the order
+  // they were picked. When present the file input accepts a multi-selection
+  // and skips the style picker (batches are always used as-is).
+  onImagesUploaded?: (urls: string[]) => void;
+  // How many photos still fit in the gallery; a batch is trimmed to this.
+  remainingSlots?: number;
 }
 
 export function ImageGenerator({
@@ -57,6 +68,8 @@ export function ImageGenerator({
   slug,
   appendMode = false,
   unlimited = false,
+  onImagesUploaded,
+  remainingSlots,
 }: ImageGeneratorProps) {
   const occasionData = OCCASIONS.find((o) => o.slug === occasion);
   const ORIGINAL_STYLE: StylePreset = {
@@ -77,6 +90,11 @@ export function ImageGenerator({
   const [uploadedPhotoUrl, setUploadedPhotoUrl] = useState<string | null>(null);
   const [uploadedPhotoPreview, setUploadedPhotoPreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  // Batch upload progress, e.g. { done: 12, total: 50 }. Null when idle.
+  const [bulkProgress, setBulkProgress] = useState<{
+    done: number;
+    total: number;
+  } | null>(null);
   const [selectedStyle, setSelectedStyle] = useState<StylePreset | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -102,19 +120,101 @@ export function ImageGenerator({
   };
 
   // ─── File Upload Handler ────────────────────────────────────────────
-  const handleFileSelect = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
+  // Shared gate for both the single and batch paths. Returns null when the
+  // file is usable, otherwise the reason to show the user.
+  const rejectReason = (file: File): string | null => {
+    if (!file.type.startsWith("image/")) return "not an image";
+    if (file.size > MAX_UPLOAD_BYTES) return "over 10MB";
+    return null;
+  };
 
-      // Validate file type
-      if (!file.type.startsWith("image/")) {
-        setError("Please select an image file (JPEG, PNG, WebP)");
+  // Batch path (gallery only): upload every picked photo and hand the URLs
+  // back in one go. No style picker — batches go in as the originals.
+  const handleBulkFiles = useCallback(
+    async (files: File[]) => {
+      if (!onImagesUploaded) return;
+
+      const skipped: string[] = [];
+      let accepted = files.filter((file) => {
+        const reason = rejectReason(file);
+        if (reason) skipped.push(`${file.name} (${reason})`);
+        return !reason;
+      });
+
+      // Never overfill the gallery — trim to what still fits.
+      let trimmed = 0;
+      if (typeof remainingSlots === "number" && accepted.length > remainingSlots) {
+        trimmed = accepted.length - remainingSlots;
+        accepted = accepted.slice(0, remainingSlots);
+      }
+
+      if (accepted.length === 0) {
+        setError(
+          skipped.length > 0
+            ? `Couldn't add: ${skipped.join(", ")}`
+            : "No photos left to add."
+        );
         return;
       }
 
-      // Validate file size (max 10MB)
-      if (file.size > 10 * 1024 * 1024) {
+      setError(null);
+      setBulkProgress({ done: 0, total: accepted.length });
+
+      // Upload a few at a time, writing each result into its own slot so the
+      // gallery keeps the order the photos were picked in.
+      const urls: (string | null)[] = new Array(accepted.length).fill(null);
+      let next = 0;
+      let done = 0;
+      const worker = async () => {
+        while (next < accepted.length) {
+          const index = next++;
+          try {
+            urls[index] = await onPhotoUploaded(accepted[index]);
+          } catch {
+            skipped.push(`${accepted[index].name} (upload failed)`);
+          }
+          done += 1;
+          setBulkProgress({ done, total: accepted.length });
+        }
+      };
+      await Promise.all(
+        Array.from(
+          { length: Math.min(BULK_UPLOAD_CONCURRENCY, accepted.length) },
+          worker
+        )
+      );
+
+      setBulkProgress(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+
+      const uploaded = urls.filter((url): url is string => !!url);
+      if (uploaded.length > 0) onImagesUploaded(uploaded);
+
+      const notes = [...skipped];
+      if (trimmed > 0) notes.push(`${trimmed} over the photo limit`);
+      setError(notes.length > 0 ? `Skipped: ${notes.join(", ")}` : null);
+    },
+    [onImagesUploaded, onPhotoUploaded, remainingSlots]
+  );
+
+  const handleFileSelect = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files ?? []);
+      if (files.length === 0) return;
+
+      // More than one photo in gallery mode: straight into the batch path.
+      if (files.length > 1 && onImagesUploaded) {
+        await handleBulkFiles(files);
+        return;
+      }
+
+      const file = files[0];
+      const reason = rejectReason(file);
+      if (reason === "not an image") {
+        setError("Please select an image file (JPEG, PNG, WebP)");
+        return;
+      }
+      if (reason) {
         setError("Image must be less than 10MB");
         return;
       }
@@ -138,7 +238,7 @@ export function ImageGenerator({
         setUploadedPhotoPreview(null);
       }
     },
-    [onPhotoUploaded]
+    [onPhotoUploaded, onImagesUploaded, handleBulkFiles]
   );
 
   const handleRemovePhoto = () => {
@@ -154,16 +254,16 @@ export function ImageGenerator({
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
-      const file = e.dataTransfer.files?.[0];
-      if (file) {
-        // Create a synthetic event to reuse the file handler
-        const dt = new DataTransfer();
-        dt.items.add(file);
-        const syntheticEvent = {
-          target: { files: dt.files },
-        } as unknown as React.ChangeEvent<HTMLInputElement>;
-        handleFileSelect(syntheticEvent);
-      }
+      const files = Array.from(e.dataTransfer.files ?? []);
+      if (files.length === 0) return;
+      // Create a synthetic event to reuse the file handler (which routes a
+      // multi-file drop into the batch path on its own).
+      const dt = new DataTransfer();
+      files.forEach((file) => dt.items.add(file));
+      const syntheticEvent = {
+        target: { files: dt.files },
+      } as unknown as React.ChangeEvent<HTMLInputElement>;
+      handleFileSelect(syntheticEvent);
     },
     [handleFileSelect]
   );
@@ -314,7 +414,31 @@ export function ImageGenerator({
             className="space-y-4"
           >
             {/* Upload Area */}
-            {!uploadedPhotoPreview ? (
+            {bulkProgress ? (
+              <div className="border-2 border-dashed border-accent/40 rounded-xl p-8 text-center">
+                <div className="flex flex-col items-center gap-3">
+                  <Loader2 className="w-6 h-6 animate-spin text-accent" />
+                  <div>
+                    <p className="text-sm font-medium">
+                      Uploading {bulkProgress.done} of {bulkProgress.total} photos
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Keep this tab open until it finishes.
+                    </p>
+                  </div>
+                  <div className="w-full max-w-xs h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full bg-accent transition-all"
+                      style={{
+                        width: `${Math.round(
+                          (bulkProgress.done / bulkProgress.total) * 100
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : !uploadedPhotoPreview ? (
               <div
                 onDrop={handleDrop}
                 onDragOver={(e) => e.preventDefault()}
@@ -325,6 +449,7 @@ export function ImageGenerator({
                   ref={fileInputRef}
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
+                  multiple={!!onImagesUploaded}
                   onChange={handleFileSelect}
                   className="hidden"
                 />
@@ -334,10 +459,13 @@ export function ImageGenerator({
                   </div>
                   <div>
                     <p className="text-sm font-medium">
-                      Drop your photo here or click to upload
+                      {onImagesUploaded
+                        ? "Drop your photos here or click to upload"
+                        : "Drop your photo here or click to upload"}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
                       JPEG, PNG, WebP up to 10MB
+                      {onImagesUploaded ? " · pick several at once" : ""}
                     </p>
                   </div>
                 </div>

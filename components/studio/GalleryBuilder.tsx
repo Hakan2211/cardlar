@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Reorder, useDragControls } from "framer-motion";
 import { ImageGenerator } from "./ImageGenerator";
 import { CardImage } from "@/lib/media";
@@ -107,12 +107,17 @@ export function GalleryBuilder({
   // A single-photo package hides the timeline framing; Story shows it.
   const isTimeline = maxImages > 1;
   const [items, setItems] = useState<CardImage[]>(initialImages);
+  // Batch uploads resolve over many seconds, long after the callback that
+  // started them captured `items`. Append from this ref instead of that
+  // stale snapshot.
+  const itemsRef = useRef<CardImage[]>(initialImages);
   const [showAdd, setShowAdd] = useState(initialImages.length === 0);
   const [addError, setAddError] = useState<string | null>(null);
 
   // Keep in sync if the card loads/changes underneath us (first mount).
   useEffect(() => {
     if (items.length === 0 && initialImages.length > 0) {
+      itemsRef.current = initialImages;
       setItems(initialImages);
       setShowAdd(false);
     }
@@ -121,6 +126,7 @@ export function GalleryBuilder({
 
   const persist = useCallback(
     (next: CardImage[]) => {
+      itemsRef.current = next;
       setItems(next);
       void onPersist(next);
     },
@@ -154,6 +160,24 @@ export function GalleryBuilder({
       if (items.length + 1 >= maxImages) setShowAdd(false);
     },
     [items, maxImages, onCountRegen, persist]
+  );
+
+  // Direct uploads never cost a generation, so a batch goes straight in.
+  const handleBulkUploaded = useCallback(
+    (urls: string[]) => {
+      const room = maxImages - itemsRef.current.length;
+      if (room <= 0) return;
+      const added = urls.slice(0, room).map((url) => ({
+        url,
+        caption: "",
+        dateLabel: "",
+        source: "upload",
+      }));
+      const next = [...itemsRef.current, ...added];
+      persist(next);
+      if (next.length >= maxImages) setShowAdd(false);
+    },
+    [maxImages, persist]
   );
 
   const updateAt = (index: number, patch: Partial<CardImage>) => {
@@ -250,6 +274,8 @@ export function GalleryBuilder({
             slug={slug}
             appendMode
             unlimited={unlimited}
+            onImagesUploaded={isTimeline ? handleBulkUploaded : undefined}
+            remainingSlots={maxImages - items.length}
           />
         </div>
       )}
