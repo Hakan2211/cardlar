@@ -18,6 +18,9 @@ export interface EditImageInput {
 export interface GenerateMusicInput {
   prompt: string;
   lyricsPrompt?: string;
+  // Upper bound on track length in seconds. Providers clamp to their own
+  // limits (fal's minimax/music-3 tops out at 300s).
+  durationSeconds?: number;
 }
 
 export interface ImageResult {

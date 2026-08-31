@@ -29,7 +29,7 @@ Relevant current facts:
 - **Partial dev bypass already exists**, but implicitly: if `STRIPE_SECRET_KEY` is unset the checkout skips Stripe entirely; if `FAL_KEY` is unset, image APIs return placehold.co placeholders and music returns nothing. This is presence-of-key magic, not an explicit mode.
 - **Media limits:** exactly **1 image** (`imageUrl`), **1 voice recording**, **1 AI music track** (`musicUrl`). Image regens capped at 3.
 - **Viewer:** envelope with wax seal → spring reveal → single image → word-by-word message animation → emoji particle rain → optional watermark. Music loops at volume 0.3.
-- **AI:** fal.ai only — `nano-banana-2` (generate), `nano-banana-2/edit` (photo restyle), `minimax-music/v2` (music).
+- **AI:** fal.ai only — `nano-banana-2` (generate), `nano-banana-2/edit` (photo restyle), `minimax/music-3` (music).
 - **Dev vs prod data:** dev runs against the dev Convex deployment (`dev:quaint-mouse-314`); a card created there is **not reachable from the production site** — this matters for "share my dev cards".
 
 ---

@@ -262,10 +262,14 @@ export const localProvider: AIProvider = {
   async generateMusic({
     prompt,
     lyricsPrompt,
+    durationSeconds,
   }: GenerateMusicInput): Promise<MusicResult> {
     const lyrics = lyricsPrompt?.trim() || "[instrumental]";
+    const seconds = Number.isFinite(durationSeconds)
+      ? Math.min(300, Math.max(10, Math.round(Number(durationSeconds))))
+      : MUSIC_SECONDS;
     const { bytes, contentType } = await runGraph(
-      aceStepGraph(prompt, lyrics, MUSIC_SECONDS),
+      aceStepGraph(prompt, lyrics, seconds),
       // Music is the slowest step here; give it room beyond the default.
       { timeoutMs: 900_000 }
     );

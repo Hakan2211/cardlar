@@ -25,6 +25,7 @@ export function MusicGenerator({
   const occasionData = OCCASIONS.find((o) => o.slug === occasion);
   const [prompt, setPrompt] = useState(occasionData?.defaultMusicPrompt || "");
   const [lyricsPrompt, setLyricsPrompt] = useState("[instrumental]");
+  const [durationSeconds, setDurationSeconds] = useState(60);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +41,7 @@ export function MusicGenerator({
       const response = await fetch("/api/generate-music", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, lyricsPrompt, slug }),
+        body: JSON.stringify({ prompt, lyricsPrompt, durationSeconds, slug }),
       });
 
       const data = await response.json();
@@ -96,6 +97,23 @@ export function MusicGenerator({
         />
         <p className="text-xs text-muted-foreground mt-1">
           Use [verse], [chorus], [bridge], [outro] tags. Leave as [instrumental] for no lyrics.
+        </p>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium mb-2">Length</label>
+        <select
+          value={durationSeconds}
+          onChange={(e) => setDurationSeconds(Number(e.target.value))}
+          className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+        >
+          <option value={30}>30 seconds</option>
+          <option value={60}>1 minute</option>
+          <option value={120}>2 minutes</option>
+          <option value={180}>3 minutes</option>
+        </select>
+        <p className="text-xs text-muted-foreground mt-1">
+          Upper bound — the track may finish a little earlier.
         </p>
       </div>
 
