@@ -50,7 +50,7 @@ export function Hero() {
         </h1>
 
         <p className="text-lg md:text-xl text-muted-foreground mb-10 max-w-2xl mx-auto leading-relaxed">
-          Create stunning AI-generated cards with custom images, voice messages,
+          Create stunning AI-generated cards with photo stories, voice messages,
           and music. Share the perfect greeting in just minutes.
         </p>
 

@@ -28,7 +28,7 @@ const steps = [
     number: "4",
     title: "Create & Personalize",
     description:
-      "Generate AI artwork, write your message, record your voice, and add custom music.",
+      "Generate AI artwork, add your photos as a timeline, write your message, record your voice, and add custom music.",
     icon: "🎨",
   },
   {
