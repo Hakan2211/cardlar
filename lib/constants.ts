@@ -1338,9 +1338,10 @@ export interface PackageInfo {
     voice: boolean;
     music: boolean;
   };
-  // Media entitlements. Memory Lane (multiple photos + multi-track soundtrack)
-  // is reserved for the top "story" tier; everything below is a single photo /
-  // single track. Owner/admin cards bypass these (see StudioLayout).
+  // Media entitlements. A maxImages above 1 turns the image step into a
+  // Memory Lane timeline ("full" gets a short one, "story" the long one);
+  // multi-track soundtracks stay a "story" perk. Owner/admin cards bypass
+  // these (see StudioLayout).
   maxImages: number;
   maxTracks: number;
 }
@@ -1393,16 +1394,17 @@ export const PACKAGES: Record<PackageKey, PackageInfo> = {
     name: "Full Experience",
     price: 499,
     priceDisplay: "$4.99",
-    description: "The ultimate single-photo card with voice and music",
+    description: "Up to three photos with voice and music",
     features: [
       "AI-generated card image",
+      "Up to 3 photos",
       "Custom text message",
       "Voice recording",
       "AI-generated music",
       "Best value",
     ],
     includes: { image: true, voice: true, music: true },
-    maxImages: 1,
+    maxImages: 3,
     maxTracks: 1,
   },
   story: {
@@ -1413,13 +1415,13 @@ export const PACKAGES: Record<PackageKey, PackageInfo> = {
       "A scroll-through Memory Lane of photos with voice and a full soundtrack",
     features: [
       "Everything in Full",
-      "Up to 10 photos as a scrolling story",
+      "Up to 20 photos as a scrolling story",
       "Captions & date labels per photo",
       "Up to 3 AI music tracks (play in sequence)",
       "Our most magical experience",
     ],
     includes: { image: true, voice: true, music: true },
-    maxImages: 10,
+    maxImages: 20,
     maxTracks: 3,
   },
 } as const;

@@ -104,7 +104,7 @@ export function GalleryBuilder({
   onPersist,
   onCountRegen,
 }: GalleryBuilderProps) {
-  // A single-photo package hides the timeline framing; Story shows it.
+  // A single-photo package hides the timeline framing; multi-photo shows it.
   const isTimeline = maxImages > 1;
   const [items, setItems] = useState<CardImage[]>(initialImages);
   // Batch uploads resolve over many seconds, long after the callback that
@@ -241,7 +241,7 @@ export function GalleryBuilder({
       )}
       {atMax && !isTimeline && (
         <p className="text-xs text-center text-muted-foreground">
-          Want a scrolling photo story? Upgrade to the Story package for up to 10
+          Want a scrolling photo story? Upgrade to the Story package for up to 20
           photos.
         </p>
       )}
