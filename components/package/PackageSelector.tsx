@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
+import { toast } from "sonner";
 import { PackageCard } from "./PackageCard";
 import { WatermarkToggle } from "./WatermarkToggle";
 import { Button } from "@/components/ui/button";
@@ -35,16 +36,31 @@ export function PackageSelector() {
         }),
       });
 
-      const data = await response.json();
+      // A platform-level failure can return HTML, not JSON.
+      const data = await response.json().catch(() => null);
 
-      if (data.url) {
+      if (response.ok && data?.url) {
         window.location.href = data.url;
-      } else {
-        console.error("No checkout URL returned");
-        setIsLoading(false);
+        return;
       }
+
+      // Never fail silently here: a customer who sees nothing happen just
+      // leaves. Show them what went wrong.
+      console.error("Checkout failed", {
+        status: response.status,
+        code: data?.code,
+        error: data?.error,
+      });
+      toast.error(
+        data?.error ??
+          "We couldn't start checkout. Please try again — no charge was made."
+      );
+      setIsLoading(false);
     } catch (error) {
       console.error("Checkout error:", error);
+      toast.error(
+        "We couldn't reach the payment service. Check your connection and try again."
+      );
       setIsLoading(false);
     }
   };

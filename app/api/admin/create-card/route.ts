@@ -4,6 +4,7 @@ import { api } from "@/convex/_generated/api";
 import { PACKAGES, PackageKey } from "@/lib/constants";
 import { createSlug } from "@/lib/slug";
 import { authorizeOwner } from "@/lib/owner";
+import { resolveBaseUrl } from "@/lib/base-url";
 
 // Owner-only free card creation. Authorized by OWNER_MODE (dev) or a correct
 // ADMIN_SECRET (works in production). The resulting card is already paid and
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
       ...(customOccasionName ? { customOccasionName } : {}),
     });
 
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const baseUrl = resolveBaseUrl(req);
     return NextResponse.json({ slug, url: `${baseUrl}/studio/${slug}` });
   } catch (error) {
     console.error("Admin create-card error:", error);
