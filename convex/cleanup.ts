@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation } from "./_generated/server";
+import { internalQuery, mutation } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 
 // Housekeeping that reclaims storage and rows nothing points at any more.
@@ -188,5 +188,59 @@ export const pruneAbandonedCheckouts = mutation({
       deleted: stale.length,
       slugs: stale.slice(0, 10).map((c) => c.slug),
     };
+  },
+});
+
+// A Convex storage URL always carries this path segment. Anything else — a
+// fal.media URL, a placehold.co dev placeholder — is media we do not own and
+// cannot keep alive.
+const CONVEX_STORAGE_PATH = "/api/storage/";
+
+const isExternal = (url: string | undefined): url is string =>
+  !!url && !url.includes(CONVEX_STORAGE_PATH);
+
+/**
+ * Every card still pointing at media hosted somewhere other than our own
+ * Convex storage — i.e. cards written before generated media was re-hosted,
+ * whose images or soundtrack will 404 once fal reclaims the files (~7 days
+ * after the card was made).
+ *
+ * internalQuery on purpose. This returns the whole card table keyed by slug;
+ * exposing it publicly would let anyone enumerate and read every card. Call it
+ * with the CLI, which authenticates with the deploy key:
+ *
+ *   npx convex run cleanup:listCardsWithExternalMedia --prod
+ */
+export const listCardsWithExternalMedia = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const cards = await ctx.db.query("cards").collect();
+    const affected = [];
+
+    for (const card of cards) {
+      const urls = [
+        ...(card.images ?? []).map((i) => i.url),
+        ...(card.musicTracks ?? []).map((t) => t.url),
+        card.imageUrl,
+        card.musicUrl,
+        card.originalPhotoUrl,
+      ].filter(isExternal);
+
+      if (urls.length === 0) continue;
+
+      affected.push({
+        slug: card.slug,
+        status: card.status,
+        isPaid: card.isPaid,
+        createdAt: new Date(card.createdAt).toISOString(),
+        ageDays: Math.floor((Date.now() - card.createdAt) / 86400000),
+        externalCount: new Set(urls).size,
+        hosts: [...new Set(urls.map((u) => { try { return new URL(u).host; } catch { return "?"; } }))],
+      });
+    }
+
+    // Oldest first: those are closest to being reclaimed, or already gone.
+    affected.sort((a, b) => b.ageDays - a.ageDays);
+    return affected;
   },
 });

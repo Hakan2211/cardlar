@@ -13,10 +13,18 @@
 // you know which customers need a rebuild.
 //
 //   node scripts/rehost-fal-media.mjs <slug> [<slug>...] [--dry] [--dev]
+//   node scripts/rehost-fal-media.mjs --from-json affected.json [--dry]
 //
-// --dry  report what would change, write nothing
-// --dev  operate on the dev deployment instead of production
+// --dry        report what would change, write nothing
+// --dev        operate on the dev deployment instead of production
+// --from-json  read slugs from the output of the listing query, so a whole
+//              backlog can be repaired in one pass:
+//
+//                npx convex run cleanup:listCardsWithExternalMedia --prod > affected.json
+//                node scripts/rehost-fal-media.mjs --from-json affected.json --dry
+//                node scripts/rehost-fal-media.mjs --from-json affected.json
 
+import fs from "node:fs";
 import { ConvexHttpClient } from "convex/browser";
 import { anyApi } from "convex/server";
 
@@ -26,11 +34,30 @@ const PROD_URL = "https://artful-seal-643.eu-west-1.convex.cloud";
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry");
 const useDev = args.includes("--dev");
-const slugs = args.filter((a) => !a.startsWith("--"));
+const fromJsonIndex = args.indexOf("--from-json");
+const fromJsonPath = fromJsonIndex !== -1 ? args[fromJsonIndex + 1] : null;
+
+let slugs = args.filter(
+  (a, i) => !a.startsWith("--") && i !== fromJsonIndex + 1
+);
+
+if (fromJsonPath) {
+  // Accepts the listing query's array of card objects, or a plain array of
+  // slug strings.
+  const parsed = JSON.parse(fs.readFileSync(fromJsonPath, "utf8"));
+  const fromFile = (Array.isArray(parsed) ? parsed : [])
+    .map((row) => (typeof row === "string" ? row : row?.slug))
+    .filter(Boolean);
+  slugs = [...new Set([...slugs, ...fromFile])];
+  console.log(`Loaded ${fromFile.length} slug(s) from ${fromJsonPath}`);
+}
 
 if (slugs.length === 0) {
   console.error(
     "usage: node scripts/rehost-fal-media.mjs <slug> [<slug>...] [--dry] [--dev]"
+  );
+  console.error(
+    "       node scripts/rehost-fal-media.mjs --from-json <file> [--dry] [--dev]"
   );
   process.exit(1);
 }
