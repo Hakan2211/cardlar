@@ -7,8 +7,27 @@ import type {
   MusicResult,
 } from "./types";
 
-// Production provider backed by fal.ai. This is a straight port of the logic
-// that previously lived inline in the API routes.
+// Production provider backed by fal.ai.
+//
+// Everything this provider returns is marked `ephemeral`: fal keeps generated
+// files on its CDN for ~7 days and then reclaims them. Cards are permanent, so
+// the API routes re-host these URLs into Convex storage before they are ever
+// written to a card row.
+
+// Images run on OpenAI's gpt-image-2 at `low` quality, which is priced per
+// resolution-and-quality tier rather than per image. At landscape_4_3
+// (1024x768) that is about $0.011 per edit and $0.005 per generation, against
+// $0.08 either way on the nano-banana-2 models this replaced. Low quality is
+// the point — it is what makes the tier cheap, and it holds up at the size a
+// card actually renders.
+//
+// image_size is pinned rather than left on `auto` for two reasons: it keeps the
+// 4:3 shape the card layout is built around, and it fixes which price tier the
+// request lands in. Raise the quality with FAL_IMAGE_QUALITY (auto|low|medium|
+// high) if a tier ever proves too soft — note the cost climbs steeply: medium
+// is ~4x low and high is ~14x.
+const IMAGE_SIZE = "landscape_4_3";
+const IMAGE_QUALITY = process.env.FAL_IMAGE_QUALITY || "low";
 
 async function configuredFal() {
   const { fal } = await import("@fal-ai/client");
@@ -45,13 +64,13 @@ export const falProvider: AIProvider = {
   async generateImage({ prompt }: GenerateImageInput): Promise<ImageResult> {
     const fal = await configuredFal();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = await fal.subscribe("fal-ai/nano-banana-2" as any, {
+    const result = await fal.subscribe("openai/gpt-image-2" as any, {
       input: {
         prompt: `High quality greeting card illustration: ${prompt}. Professional card design, beautiful and detailed, suitable for a greeting card.`,
         num_images: 1,
-        aspect_ratio: "4:3",
-        output_format: "png",
-        resolution: "1K",
+        image_size: IMAGE_SIZE,
+        quality: IMAGE_QUALITY,
+        output_format: "jpeg",
       } as Record<string, unknown>,
       logs: false,
     });
@@ -59,20 +78,20 @@ export const falProvider: AIProvider = {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const imageUrl = (result.data as any)?.images?.[0]?.url;
     if (!imageUrl) throw new Error("No image generated");
-    return { imageUrl };
+    return { imageUrl, ephemeral: true };
   },
 
   async editImage({ prompt, imageUrl }: EditImageInput): Promise<ImageResult> {
     const fal = await configuredFal();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = await fal.subscribe("fal-ai/nano-banana-2/edit" as any, {
+    const result = await fal.subscribe("openai/gpt-image-2/edit" as any, {
       input: {
         prompt: `${prompt}. Professional greeting card design, beautiful and high quality.`,
         image_urls: [imageUrl],
         num_images: 1,
-        aspect_ratio: "4:3",
-        output_format: "png",
-        resolution: "1K",
+        image_size: IMAGE_SIZE,
+        quality: IMAGE_QUALITY,
+        output_format: "jpeg",
       } as Record<string, unknown>,
       logs: false,
     });
@@ -80,7 +99,7 @@ export const falProvider: AIProvider = {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const resultImageUrl = (result.data as any)?.images?.[0]?.url;
     if (!resultImageUrl) throw new Error("No image generated");
-    return { imageUrl: resultImageUrl };
+    return { imageUrl: resultImageUrl, ephemeral: true };
   },
 
   async generateMusic({
@@ -104,6 +123,6 @@ export const falProvider: AIProvider = {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const audioUrl = (result.data as any)?.audio?.url;
     if (!audioUrl) throw new Error("No music generated");
-    return { audioUrl };
+    return { audioUrl, ephemeral: true };
   },
 };

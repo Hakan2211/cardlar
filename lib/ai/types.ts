@@ -27,6 +27,11 @@ export interface ImageResult {
   imageUrl: string;
   // Optional human-readable note surfaced to the client (e.g. "dev placeholder").
   note?: string;
+  // True when imageUrl points at storage the provider will eventually reclaim
+  // (fal keeps generated files for ~7 days). Cards outlive that by design, so
+  // the API routes copy ephemeral media into Convex storage before it is
+  // written to a card. See rehostToConvex in lib/ai/convexUpload.ts.
+  ephemeral?: boolean;
 }
 
 export interface MusicResult {
@@ -34,6 +39,8 @@ export interface MusicResult {
   // an empty audioUrl as a soft failure, not an error.
   audioUrl: string;
   note?: string;
+  // See ImageResult.ephemeral.
+  ephemeral?: boolean;
 }
 
 export interface AIProvider {
