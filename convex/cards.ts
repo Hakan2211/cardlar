@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { Id } from "./_generated/dataModel";
 
 // Kept in sync with MAX_IMAGE_REGENERATIONS in lib/constants.ts. Duplicated
 // here because Convex functions run in a separate module graph.
@@ -16,6 +17,18 @@ export const create = mutation({
     customOccasionName: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    // Idempotent on slug. This runs from a useEffect on /checkout/success, so
+    // it fires again on every refresh, back-navigation and StrictMode double
+    // invoke. Without this guard each of those inserted another row for the
+    // same slug — and because getBySlug and markPaid both use .first(), the
+    // webhook could mark one duplicate paid while the studio and viewer read
+    // the other and treat a paid card as unpaid.
+    const existing = await ctx.db
+      .query("cards")
+      .withIndex("by_slug", (q) => q.eq("slug", args.slug))
+      .first();
+    if (existing) return existing._id;
+
     const cardId = await ctx.db.insert("cards", {
       slug: args.slug,
       occasion: args.occasion,
@@ -291,5 +304,70 @@ export const incrementViewCount = mutation({
     }
 
     await ctx.db.patch(card._id, updates);
+  },
+});
+
+// Permanently delete a card and every file it owns.
+//
+// This is the mechanism behind a GDPR erasure request. There is deliberately no
+// self-service version: cards have no accounts, so anyone holding the share
+// link would be able to delete a card they merely received. Authorization
+// happens in the API route (ADMIN_SECRET) before this runs.
+//
+// Gallery and soundtrack entries usually store only a URL, and a storage file's
+// public URL does not contain its Id<"_storage">, so the ids have to be
+// recovered by resolving each file's URL. That scan is why this is an
+// admin-rate operation rather than something called routinely — cleanup.ts
+// sweeps orphans in bulk instead.
+export const deleteCard = mutation({
+  args: { slug: v.string() },
+  handler: async (ctx, args) => {
+    const card = await ctx.db
+      .query("cards")
+      .withIndex("by_slug", (q) => q.eq("slug", args.slug))
+      .first();
+
+    if (!card) return { deleted: false, filesDeleted: 0 };
+
+    // Ids we already hold directly.
+    const storageIds = new Set<Id<"_storage">>();
+    if (card.imageStorageId) storageIds.add(card.imageStorageId);
+    if (card.musicStorageId) storageIds.add(card.musicStorageId);
+    if (card.voiceStorageId) storageIds.add(card.voiceStorageId);
+    for (const img of card.images ?? []) {
+      if (img.storageId) storageIds.add(img.storageId);
+    }
+    for (const track of card.musicTracks ?? []) {
+      if (track.storageId) storageIds.add(track.storageId);
+    }
+
+    // URLs whose id we still need to find.
+    const urls = new Set<string>();
+    for (const img of card.images ?? []) if (img.url) urls.add(img.url);
+    for (const t of card.musicTracks ?? []) if (t.url) urls.add(t.url);
+    if (card.imageUrl) urls.add(card.imageUrl);
+    if (card.musicUrl) urls.add(card.musicUrl);
+    if (card.originalPhotoUrl) urls.add(card.originalPhotoUrl);
+
+    if (urls.size > 0) {
+      for (const file of await ctx.db.system.query("_storage").collect()) {
+        const url = await ctx.storage.getUrl(file._id);
+        if (url && urls.has(url)) storageIds.add(file._id);
+      }
+    }
+
+    let filesDeleted = 0;
+    for (const id of storageIds) {
+      try {
+        await ctx.storage.delete(id);
+        filesDeleted += 1;
+      } catch {
+        // Already gone (or shared with another card that removed it first).
+        // Deleting the row is what matters; a stray file is swept later.
+      }
+    }
+
+    await ctx.db.delete(card._id);
+    return { deleted: true, filesDeleted };
   },
 });

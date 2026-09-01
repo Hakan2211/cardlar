@@ -263,7 +263,8 @@ Each phase ships independently; production users see no change until Phase 3 lan
 - **Admin secret hygiene:** treat `ADMIN_SECRET` like a password; constant-time compare; rate-limit the admin route.
 - **Open:** Should multi-image/multi-track become a new "Premium/Story" package above `full`, or fold into `full` at a higher price? (Recommendation: fold into `full`, raise to $6.99, keep others unchanged.)
 - **Open:** Auto-advance timing (5s) vs. tap-only — validate with 2–3 real recipients.
-- **Reminder from audit:** 7-day expiration exists in schema but is intentionally unimplemented (commit `282af47`); decide during Phase 3 whether Memory Lane cards revive it (storage cost grows with 10 images/card).
+- **Decided — card expiration: no.** The schema's `expiresAt` stays unimplemented and is dead today. The storage-cost premise no longer holds: client-side resizing before upload (`lib/image-resize.ts`) brought a Story card to ~9MB and a Basic card to ~200KB, so ~50k cards fit inside Convex's included 100GB and 250k cards cost ~$12/month — a rounding error against the revenue those cards represent. There is also no stored customer email anywhere, so nobody could be warned before deletion, and a card is a keepsake (Condolences and Anniversary are both live occasions). Reclaiming space is handled instead by `convex/cleanup.ts`: orphaned storage files and abandoned `pending_payment` rows, neither of which a customer can open. If expiry is ever revisited the prerequisites are: capture the email Stripe already collects, warn twice before deleting, offer an export, and measure from last view rather than creation.
+- **Erasure requests** are actioned via `POST /api/admin/delete-card` (ADMIN_SECRET), which removes the row and every file it owns. Deliberately not self-service: cards have no accounts, so slug-only deletion would let any recipient destroy a card they were merely sent.
 
 ---
 

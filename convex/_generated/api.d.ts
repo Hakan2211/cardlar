@@ -9,6 +9,7 @@
  */
 
 import type * as cards from "../cards.js";
+import type * as cleanup from "../cleanup.js";
 import type * as files from "../files.js";
 import type * as occasions from "../occasions.js";
 
@@ -20,6 +21,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   cards: typeof cards;
+  cleanup: typeof cleanup;
   files: typeof files;
   occasions: typeof occasions;
 }>;
