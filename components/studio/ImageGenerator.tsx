@@ -4,11 +4,9 @@ import { useState, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import {
   OCCASIONS,
-  OCCASION_STYLES,
   OCCASION_EXAMPLES,
   MAX_IMAGE_REGENERATIONS,
   OccasionKey,
-  StylePreset,
   ExampleCard,
 } from "@/lib/constants";
 import {
@@ -20,9 +18,9 @@ import {
   Palette,
   ChevronDown,
   ChevronUp,
-  X,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { downscaleImage } from "@/lib/image-resize";
 
 type TabKey = "upload" | "examples";
 
@@ -72,22 +70,14 @@ export function ImageGenerator({
   remainingSlots,
 }: ImageGeneratorProps) {
   const occasionData = OCCASIONS.find((o) => o.slug === occasion);
-  const ORIGINAL_STYLE: StylePreset = {
-    id: "original",
-    name: "Original",
-    icon: "📷",
-    editPrompt: "",
-    generatePrompt: "",
-  };
-  const styles = [ORIGINAL_STYLE, ...(OCCASION_STYLES[occasion as OccasionKey] || [])];
   const examples = OCCASION_EXAMPLES[occasion as OccasionKey] || [];
 
   const [activeTab, setActiveTab] = useState<TabKey>("upload");
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Upload photo state
-  const [uploadedPhotoUrl, setUploadedPhotoUrl] = useState<string | null>(null);
+  // Upload photo state. Only the preview is kept: an uploaded photo is
+  // committed to the gallery immediately, so there is no staged URL to hold.
   const [uploadedPhotoPreview, setUploadedPhotoPreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   // Batch upload progress, e.g. { done: 12, total: 50 }. Null when idle.
@@ -95,7 +85,6 @@ export function ImageGenerator({
     done: number;
     total: number;
   } | null>(null);
-  const [selectedStyle, setSelectedStyle] = useState<StylePreset | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Example state
@@ -111,9 +100,7 @@ export function ImageGenerator({
   // In append (gallery) mode, clear the picker so the next moment starts fresh.
   const afterGenerate = () => {
     if (!appendMode) return;
-    setUploadedPhotoUrl(null);
     setUploadedPhotoPreview(null);
-    setSelectedStyle(null);
     setSelectedExample(null);
     setCustomPrompt("");
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -122,8 +109,20 @@ export function ImageGenerator({
   // ─── File Upload Handler ────────────────────────────────────────────
   // Shared gate for both the single and batch paths. Returns null when the
   // file is usable, otherwise the reason to show the user.
+  //
+  // HEIC/HEIF is rejected on purpose. Safari renders it, so an iPhone photo
+  // dragged straight in looks perfect to the sender in the studio and in the
+  // preview — and then shows as a broken image to a recipient on Chrome,
+  // Firefox or Android, which is exactly the "photo missing from my card"
+  // report. The file picker's `accept` list makes iOS convert to JPEG for us,
+  // but drag-and-drop and the Files app both bypass it, so the check lives
+  // here. Some browsers hand over a HEIC with an empty MIME type, hence the
+  // filename check alongside the type check.
   const rejectReason = (file: File): string | null => {
-    if (!file.type.startsWith("image/")) return "not an image";
+    if (/\.(heic|heif)$/i.test(file.name) || /^image\/hei[cf]/i.test(file.type))
+      return "HEIC photos aren't supported — save it as JPEG first";
+    if (!file.type.startsWith("image/"))
+      return "not an image (use JPEG, PNG or WebP)";
     if (file.size > MAX_UPLOAD_BYTES) return "over 10MB";
     return null;
   };
@@ -169,7 +168,8 @@ export function ImageGenerator({
         while (next < accepted.length) {
           const index = next++;
           try {
-            urls[index] = await onPhotoUploaded(accepted[index]);
+            const prepared = await downscaleImage(accepted[index]);
+            urls[index] = await onPhotoUploaded(prepared);
           } catch {
             skipped.push(`${accepted[index].name} (upload failed)`);
           }
@@ -210,12 +210,8 @@ export function ImageGenerator({
 
       const file = files[0];
       const reason = rejectReason(file);
-      if (reason === "not an image") {
-        setError("Please select an image file (JPEG, PNG, WebP)");
-        return;
-      }
       if (reason) {
-        setError("Image must be less than 10MB");
+        setError(`Couldn't use ${file.name}: ${reason}.`);
         return;
       }
 
@@ -227,28 +223,38 @@ export function ImageGenerator({
       setUploadedPhotoPreview(previewUrl);
 
       try {
+        // Shrink before upload — a full-size phone photo is many times larger
+        // than the card ever renders, and the recipient pays for every byte.
+        const prepared = await downscaleImage(file);
+
         // Upload to Convex storage and get a public HTTPS URL back
         // This URL is what fal.ai needs (it must be publicly accessible)
-        const publicUrl = await onPhotoUploaded(file);
-        setUploadedPhotoUrl(publicUrl);
+        const publicUrl = await onPhotoUploaded(prepared);
         setIsUploading(false);
+
+        // The photo goes into the card the moment it lands, exactly like a
+        // multi-photo batch. It used to sit here as a preview until the sender
+        // picked a style and pressed "Use My Photo" — two clicks that are easy
+        // to miss, and skipping them meant the photo was uploaded but never
+        // written to the card. Styling is now an optional step on the photo
+        // once it is already safe. Uploads never cost an AI generation.
+        onImageGenerated(publicUrl, "original", {
+          originalPhotoUrl: publicUrl,
+          imageStyle: "original",
+          skipRegen: true,
+        });
+        afterGenerate();
       } catch {
         setError("Failed to upload photo. Please try again.");
         setIsUploading(false);
         setUploadedPhotoPreview(null);
       }
     },
-    [onPhotoUploaded, onImagesUploaded, handleBulkFiles]
+    // afterGenerate only touches setState functions, which are stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [onPhotoUploaded, onImagesUploaded, handleBulkFiles, onImageGenerated]
   );
 
-  const handleRemovePhoto = () => {
-    setUploadedPhotoUrl(null);
-    setUploadedPhotoPreview(null);
-    setSelectedStyle(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
 
   // ─── Drop Zone Handler ──────────────────────────────────────────────
   const handleDrop = useCallback(
@@ -267,53 +273,6 @@ export function ImageGenerator({
     },
     [handleFileSelect]
   );
-
-  // ─── Generate with Style (photo upload path) ───────────────────────
-  const handleApplyStyle = async () => {
-    if (!uploadedPhotoUrl || !selectedStyle) return;
-
-    // "Original" style — use the photo directly, no AI processing
-    if (selectedStyle.id === "original") {
-      onImageGenerated(uploadedPhotoUrl, "original", {
-        originalPhotoUrl: uploadedPhotoUrl,
-        imageStyle: "original",
-        skipRegen: true,
-      });
-      afterGenerate();
-      return;
-    }
-
-    setIsGenerating(true);
-    setError(null);
-
-    try {
-      const response = await fetch("/api/edit-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageUrl: uploadedPhotoUrl,
-          prompt: selectedStyle.editPrompt,
-          slug,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (data.error) {
-        setError(data.error);
-      } else {
-        onImageGenerated(data.imageUrl, selectedStyle.editPrompt, {
-          originalPhotoUrl: uploadedPhotoUrl,
-          imageStyle: selectedStyle.id,
-        });
-        afterGenerate();
-      }
-    } catch {
-      setError("Failed to apply style. Please try again.");
-    } finally {
-      setIsGenerating(false);
-    }
-  };
 
   // ─── Generate from Example (pick a design path) ────────────────────
   const handleGenerateFromExample = async (example: ExampleCard) => {
@@ -464,91 +423,32 @@ export function ImageGenerator({
                         : "Drop your photo here or click to upload"}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      JPEG, PNG, WebP up to 10MB
+                      JPEG, PNG, WebP up to 10MB · optimised automatically
                       {onImagesUploaded ? " · pick several at once" : ""}
                     </p>
                   </div>
                 </div>
               </div>
             ) : (
-              <div className="relative">
-                <div className="rounded-xl overflow-hidden border border-border">
-                  {isUploading ? (
-                    <div className="w-full aspect-[4/3] flex items-center justify-center bg-muted">
-                      <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-                    </div>
-                  ) : (
-                    <img
-                      src={uploadedPhotoPreview}
-                      alt="Your photo"
-                      className="w-full aspect-[4/3] object-cover"
-                    />
-                  )}
-                </div>
-                <button
-                  onClick={handleRemovePhoto}
-                  className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+              // Only on screen while the upload is in flight — the photo is
+              // added to the card as soon as it lands, and the picker resets.
+              <div className="relative rounded-xl overflow-hidden border border-border">
+                <img
+                  src={uploadedPhotoPreview}
+                  alt="Your photo"
+                  className="w-full aspect-[4/3] object-cover"
+                />
+                {isUploading && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/45">
+                    <Loader2 className="w-7 h-7 animate-spin text-white" />
+                    <p className="text-xs font-medium text-white">
+                      Adding to your card...
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Style Selection */}
-            {uploadedPhotoPreview && !isUploading && (
-              <div>
-                <p className="text-sm font-medium mb-3">Choose a style:</p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {styles.map((style) => (
-                    <button
-                      key={style.id}
-                      onClick={() => setSelectedStyle(style)}
-                      disabled={style.id !== "original" && isDisabled}
-                      className={`flex flex-col items-center gap-1.5 p-3 rounded-lg border-2 transition-all text-center ${
-                        selectedStyle?.id === style.id
-                          ? "border-accent bg-accent/10 shadow-sm"
-                          : "border-border hover:border-accent/30 hover:bg-muted/30"
-                      } disabled:opacity-50 disabled:cursor-not-allowed`}
-                    >
-                      <span className="text-2xl">{style.icon}</span>
-                      <span className="text-xs font-medium leading-tight">
-                        {style.name}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-
-                {/* Apply Style / Use Photo Button */}
-                <Button
-                  onClick={handleApplyStyle}
-                  disabled={
-                    !selectedStyle ||
-                    !uploadedPhotoUrl ||
-                    (selectedStyle.id !== "original" && isDisabled)
-                  }
-                  className="w-full mt-3"
-                >
-                  {isGenerating ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Applying Style...
-                    </>
-                  ) : selectedStyle?.id === "original" ? (
-                    <>
-                      <ImageIcon className="w-4 h-4 mr-2" />
-                      Use My Photo
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-4 h-4 mr-2" />
-                      {selectedStyle
-                        ? `Apply ${selectedStyle.name} Style`
-                        : "Select a Style"}
-                    </>
-                  )}
-                </Button>
-              </div>
-            )}
           </motion.div>
         )}
 

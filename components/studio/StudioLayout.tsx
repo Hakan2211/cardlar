@@ -105,14 +105,14 @@ export function StudioLayout({ slug }: StudioLayoutProps) {
   };
 
   // Persist the full gallery; mirror the cover into local preview state.
+  // The error is rethrown rather than swallowed: the studio renders photos from
+  // its own local state, so a save that quietly fails leaves the sender looking
+  // at a complete card while the row the recipient reads has no images at all.
+  // GalleryBuilder catches this and shows a retry.
   const handleImagesChange = useCallback(
     async (images: CardImage[]) => {
       setLocalImageUrl(images[0]?.url || null);
-      try {
-        await updateGallery({ slug, images });
-      } catch (e) {
-        console.error("Failed to save gallery:", e);
-      }
+      await updateGallery({ slug, images });
     },
     [slug, updateGallery]
   );
