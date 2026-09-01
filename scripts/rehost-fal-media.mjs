@@ -41,10 +41,29 @@ let slugs = args.filter(
   (a, i) => !a.startsWith("--") && i !== fromJsonIndex + 1
 );
 
+// PowerShell's `>` does not write plain UTF-8: depending on the host it emits
+// UTF-16LE or UTF-8 with a BOM, and JSON.parse rejects both. Since the
+// documented way to produce this file is `npx convex run ... > affected.json`
+// from PowerShell, decode by BOM rather than making the caller re-encode.
+function readJsonFile(path) {
+  const buf = fs.readFileSync(path);
+  let text;
+  if (buf[0] === 0xff && buf[1] === 0xfe) {
+    text = buf.subarray(2).toString("utf16le");
+  } else if (buf[0] === 0xfe && buf[1] === 0xff) {
+    text = buf.subarray(2).swap16().toString("utf16le");
+  } else if (buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
+    text = buf.subarray(3).toString("utf8");
+  } else {
+    text = buf.toString("utf8");
+  }
+  return JSON.parse(text.trim());
+}
+
 if (fromJsonPath) {
   // Accepts the listing query's array of card objects, or a plain array of
   // slug strings.
-  const parsed = JSON.parse(fs.readFileSync(fromJsonPath, "utf8"));
+  const parsed = readJsonFile(fromJsonPath);
   const fromFile = (Array.isArray(parsed) ? parsed : [])
     .map((row) => (typeof row === "string" ? row : row?.slug))
     .filter(Boolean);
