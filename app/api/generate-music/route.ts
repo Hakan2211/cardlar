@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getProvider } from "@/lib/ai";
+import { rehostToConvex } from "@/lib/ai/convexUpload";
 
 export async function POST(req: NextRequest) {
   try {
@@ -9,13 +10,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
     }
 
-    const { audioUrl, note } = await getProvider().generateMusic({
+    const { audioUrl, note, ephemeral } = await getProvider().generateMusic({
       prompt,
       lyricsPrompt,
       durationSeconds:
         typeof durationSeconds === "number" ? durationSeconds : undefined,
     });
-    return NextResponse.json({ audioUrl, slug, message: note });
+
+    // Same seven-day reclaim applies to generated audio — a soundtrack written
+    // as a fal URL goes silent a week after the card is sent.
+    const durableUrl =
+      ephemeral && audioUrl ? await rehostToConvex(audioUrl) : audioUrl;
+
+    return NextResponse.json({ audioUrl: durableUrl, slug, message: note });
   } catch (error) {
     console.error("Music generation error:", error);
     return NextResponse.json(

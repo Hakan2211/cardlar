@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getProvider } from "@/lib/ai";
+import { rehostToConvex } from "@/lib/ai/convexUpload";
 
 export async function POST(req: NextRequest) {
   try {
@@ -20,8 +21,15 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await getProvider().editImage({ prompt, imageUrl });
+
+    // fal reclaims generated files after ~7 days; cards are permanent. Copy the
+    // styled image into Convex storage before it can be written to a card.
+    const durableUrl = result.ephemeral
+      ? await rehostToConvex(result.imageUrl)
+      : result.imageUrl;
+
     return NextResponse.json({
-      imageUrl: result.imageUrl,
+      imageUrl: durableUrl,
       slug,
       message: result.note,
     });
